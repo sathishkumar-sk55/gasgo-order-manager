@@ -4,6 +4,7 @@ package com.frost.gasgo.ordermanager.service;
 import com.frost.gasgo.ordermanager.config.RestTemplateBean;
 import com.frost.gasgo.ordermanager.customexpection.AddressNotFoundException;
 import com.frost.gasgo.ordermanager.customexpection.ContactNotFoundException;
+import com.frost.gasgo.ordermanager.customexpection.OrderNotFoundException;
 import com.frost.gasgo.ordermanager.customexpection.UserNotFoundException;
 import com.frost.gasgo.ordermanager.entity.RefilOrder;
 import com.frost.gasgo.ordermanager.externalclass.AddressDataWrapper;
@@ -20,8 +21,11 @@ import org.springframework.boot.web.client.RestTemplateBuilder;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Service;
+import org.springframework.web.client.HttpClientErrorException;
+import org.springframework.web.client.ResourceAccessException;
 import org.springframework.web.client.RestTemplate;
 
+import java.net.ConnectException;
 import java.util.Date;
 
 @Service
@@ -55,7 +59,7 @@ public class OrderPlacementServiceImpl {
     private ResponseEntity<ContactDataWrapper> getContactFromUserhub(Long contactId){
         return userhubRestTemplate.getForEntity("/contact/getContactByContactId/{contactId}", ContactDataWrapper.class,contactId);
     }
-    public ResponseEntity<RefilOrder> placeOrder(RefilOrder order) throws UserNotFoundException, AddressNotFoundException, ContactNotFoundException {
+    public ResponseEntity<RefilOrder> placeOrder(RefilOrder order) throws UserNotFoundException, AddressNotFoundException, ContactNotFoundException, ConnectException {
 
         ResponseEntity<UserDataWrapper> userDataWrapperResponseEntity = null;
         ResponseEntity<AddressDataWrapper> addressDataWrapperResponseEntity = null;
@@ -75,8 +79,8 @@ public class OrderPlacementServiceImpl {
             contactDataWrapperResponseEntity = getContactFromUserhub(order.getContactId());
 
         }
-        catch (Exception exception){
-            String exceptionString = exception.toString();
+        catch (HttpClientErrorException httpClientErrorException){
+            String exceptionString = httpClientErrorException.toString();
             if (exceptionString.contains("NOT_FOUND")){
                 if (exceptionString.contains("User")){
                     throw new UserNotFoundException("User is invalid");
@@ -87,8 +91,11 @@ public class OrderPlacementServiceImpl {
                 }
             }
             else {
-                throw exception;
+                throw httpClientErrorException;
             }
+        }
+        catch (ResourceAccessException exception){
+            throw new ResourceAccessException("Connection failed : userhub");
         }
 
         order.setStatus("PLACED");
@@ -119,5 +126,11 @@ public class OrderPlacementServiceImpl {
 
 
         return ResponseEntity.status(HttpStatus.CREATED).body(placedRefilOrder);
+    }
+
+    public ResponseEntity<RefilOrder> getOrderStatus(Long orderId) throws OrderNotFoundException {
+        RefilOrder order = refilOrderRepository.findById(orderId).orElseThrow(() ->new OrderNotFoundException("Order Not Found"));
+
+        return ResponseEntity.status(HttpStatus.OK).body(order);
     }
 }
